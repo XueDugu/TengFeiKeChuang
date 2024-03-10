@@ -9,6 +9,7 @@ import com.zfdang.TouchHelperApp;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.CharsetDecoder;
 
 public class Utilities {
     static final String TAG = "Utilities";
@@ -17,7 +18,7 @@ public class Utilities {
         Log.d(TAG, "Show Node information: ");
         String indent = "";
         while (node != null) {
-            Log.d(TAG, indent + "class = " + node.getClassName() + " id = "  +node.getWindowId() + " label = " + node.getText());
+            Log.d(TAG, indent + "class = " + node.getClassName() + " id = " + node.getWindowId() + " label = " + node.getText());
             node = node.getParent();
             indent += "  ";
         }
@@ -26,7 +27,7 @@ public class Utilities {
     static public String getTraceStackInString(Throwable e) {
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
-        if(e != null) {
+        if (e != null) {
             e.printStackTrace(pw);
         }
         return sw.toString();
@@ -36,14 +37,38 @@ public class Utilities {
         Toast.makeText(TouchHelperApp.getAppContext(), cs, Toast.LENGTH_SHORT).show();
     }
 
-    public static String describeAccessibilityNode(AccessibilityNodeInfo e){
-        if(e == null) {
+    public static String describeAccessibilityNode(AccessibilityNodeInfo e) {
+        if (e == null) {
             return "null";
         }
+//        return e.toString();
+        String result = "";
+        String nodeType = "";
+        if (e.getText()!=null){
+            nodeType = "p";
+        } else if (e.isClickable()){
+            nodeType = "button";
+        } else if (e.getClassName().toString().contains("ImageView")){
+            nodeType = "img";
+        } else{
+            nodeType = "div";
+        }
+        if (e.getChildCount() == 0 && e.isVisibleToUser()){
+            String htmlTag = nodeType;
+            result = String.format(
+                    "<%s%s%s> %s </%s>\n",
+                    nodeType,
+                    (e.getWindowId() != 0) ? " id=" + e.getWindowId() : "",
+                    (e.getClassName() != null) ? " class=\"" + String.join(" ", e.getClassName()) + "\"" : "",
+                    (e.getContentDescription() != null) ? " alt=\"" + e.getContentDescription() + "\"" : "",
+                    (e.getText() != null) ? e.getText() + ", " : "",
+                    htmlTag
+            );
+        }
+        return result;
+    /*
 
-        String result = "Node";
-
-        result += " class =" + e.getClassName().toString();
+        result += " class=" + e.getClassName().toString();
 
         final Rect rect = new Rect();
         e.getBoundsInScreen(rect);
@@ -64,8 +89,13 @@ public class Utilities {
         if(text != null) {
             result += " Text=" + text.toString();
         }
+        CharSequence packageName = e.getPackageName();
+        if(packageName != null) {
+            result += " packageName=" + packageName.toString();
+        }
 
         return result;
+    */
     }
 
 }

@@ -1,5 +1,7 @@
 package com.zfdang.touchhelper;
 
+
+import android.Manifest;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.annotation.SuppressLint;
@@ -33,9 +35,19 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import com.hp.hpl.sparta.xpath.TrueExpr;
+
+import java.io.FileOutputStream;
+import java.io.File;
+import java.io.FilenameFilter;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -44,9 +56,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class TouchHelperServiceImpl {
-
+    private Context mContext;
     private static final String TAG = "TouchHelperServiceImpl";
     // this application, quite frequently this app will be clicked un-expectedly
     private static final String SelfPackageName = "开屏跳过";
@@ -81,7 +96,9 @@ public class TouchHelperServiceImpl {
     private boolean isShow = false;
 
     public TouchHelperServiceImpl(AccessibilityService service) {
+
         this.service = service;
+        this.mContext = service.getBaseContext();
     }
 
     public void onServiceConnected() {
@@ -152,7 +169,7 @@ public class TouchHelperServiceImpl {
         }
     }
 
-    public void onInterrupt(){
+    public void onInterrupt() {
         // stopSkipAdProcess();
     }
 
@@ -259,22 +276,22 @@ public class TouchHelperServiceImpl {
             switch (event.getEventType()) {
                 case AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED:
                     String pkgName = tempPkgName.toString();
-                    if(setIMEApps.contains(pkgName)) {
+                    if (setIMEApps.contains(pkgName)) {
                         // IME might be temporarily started in the package, skip this event
                         break;
                     }
                     final String actName = tempClassName.toString();
                     boolean isActivity = !actName.startsWith("android.") && !actName.startsWith("androidx.");
-                    if(!currentPackageName.equals(pkgName)) {
+                    if (!currentPackageName.equals(pkgName)) {
                         // new package, is it a activity?
-                        if(isActivity) {
+                        if (isActivity) {
                             // yes, it's an activity
                             // since it's an activity in another package, it must be a new activity, save them
                             currentPackageName = pkgName;
                             currentActivityName = actName;
                             // stop current skip ad process if it exists
                             stopSkipAdProcess();
-                            if(setPackages.contains(pkgName)) {
+                            if (setPackages.contains(pkgName)) {
                                 // if the package is in our list, start skip ads process
                                 // this is the only place to start skip ad process
                                 startSkipAdProcess();
@@ -282,9 +299,9 @@ public class TouchHelperServiceImpl {
                         }
                     } else {
                         // current package, we just save the activity
-                        if(isActivity) {
+                        if (isActivity) {
                             // yes, it's an activity
-                            if(!currentActivityName.equals(actName)) {
+                            if (!currentActivityName.equals(actName)) {
                                 // new activity in the package, this means this activity is not the first activity any more, stop skip ad process
                                 // update: there are some cases that ad-activity is not the first activity in the package, so don't stop skip ad process
 //                                stopSkipAdProcess();
@@ -309,17 +326,18 @@ public class TouchHelperServiceImpl {
                             final Future<?>[] futures = {null};
                             futures[0] = taskExecutorService.scheduleAtFixedRate(new Runnable() {
                                 int num = 0;
+
                                 @Override
                                 public void run() {
                                     if (num < PACKAGE_POSITION_CLICK_RETRY) {
-                                        if(currentActivityName.equals(packagePositionDescription.activityName)) {
+                                        if (currentActivityName.equals(packagePositionDescription.activityName)) {
                                             // current activity is null, or current activity is the target activity
                                             if (BuildConfig.DEBUG) {
                                                 Log.d(TAG, "Find skip-ad by position, simulate click now! ");
                                             }
                                             click(packagePositionDescription.x, packagePositionDescription.y, 0, 40);
                                         }
-                                        num ++;
+                                        num++;
                                     } else {
                                         futures[0].cancel(true);
                                     }
@@ -337,7 +355,7 @@ public class TouchHelperServiceImpl {
                         skipAdByActivityWidget = false;
                         setTargetedWidgets = mapPackageWidgets.get(currentPackageName);
                     }
-                    if(setTargetedWidgets != null) {
+                    if (setTargetedWidgets != null) {
                         if (BuildConfig.DEBUG) {
                             Log.d(TAG, "Find skip-ad by widget, simulate click ");
                         }
@@ -357,7 +375,7 @@ public class TouchHelperServiceImpl {
                     }
                     break;
                 case AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED:
-                    if(!setPackages.contains(tempPkgName.toString())) {
+                    if (!setPackages.contains(tempPkgName.toString())) {
                         break;
                     }
 
@@ -395,8 +413,9 @@ public class TouchHelperServiceImpl {
 
     /**
      * 遍历节点跳过广告
+     *
      * @param root 根节点
-     * @param set 传入set时按控件判断，否则按关键词判断
+     * @param set  传入set时按控件判断，否则按关键词判断
      */
     private void iterateNodesToSkipAd(AccessibilityNodeInfo root, Set<PackageWidgetDescription> set) {
         ArrayList<AccessibilityNodeInfo> topNodes = new ArrayList<>();
@@ -460,11 +479,11 @@ public class TouchHelperServiceImpl {
         }
         // try to find keyword
         boolean isFound = false;
-        for (String keyword: keyWordList) {
+        for (String keyword : keyWordList) {
             // text or description contains keyword, but not too long （<= length + 6）
-            if (text != null && (text.toString().length() <= keyword.length() + 6 ) && text.toString().contains(keyword) && !text.toString().equals(SelfPackageName)) {
+            if (text != null && (text.toString().length() <= keyword.length() + 6) && text.toString().contains(keyword) && !text.toString().equals(SelfPackageName)) {
                 isFound = true;
-            } else if (description != null && (description.toString().length() <= keyword.length() + 6) && description.toString().contains(keyword)  && !description.toString().equals(SelfPackageName)) {
+            } else if (description != null && (description.toString().length() <= keyword.length() + 6) && description.toString().contains(keyword) && !description.toString().equals(SelfPackageName)) {
                 isFound = true;
             }
             if (isFound) {
@@ -528,7 +547,7 @@ public class TouchHelperServiceImpl {
                     Log.d(TAG, "Find skip-ad by Widget " + e.toString());
                 }
                 String nodeDesc = Utilities.describeAccessibilityNode(node);
-                if(!clickedWidgets.contains(nodeDesc)) {
+                if (!clickedWidgets.contains(nodeDesc)) {
                     // add this widget to clicked widget, avoid multiple click on the same widget
                     clickedWidgets.add(nodeDesc);
 
@@ -551,7 +570,7 @@ public class TouchHelperServiceImpl {
         return false;
     }
 
-    private void showAllChildren(AccessibilityNodeInfo root){
+    private void showAllChildren(AccessibilityNodeInfo root) {
         ArrayList<AccessibilityNodeInfo> roots = new ArrayList<>();
         roots.add(root);
         ArrayList<AccessibilityNodeInfo> nodeList = new ArrayList<>();
@@ -586,13 +605,13 @@ public class TouchHelperServiceImpl {
     }
 
     private void dumpChildNodes(AccessibilityNodeInfo root, List<AccessibilityNodeInfo> list, StringBuilder dumpString, String indent) {
-        if(root == null) return;
+        if (root == null) return;
         list.add(root);
         dumpString.append(indent + Utilities.describeAccessibilityNode(root) + "\n");
 
         for (int n = 0; n < root.getChildCount(); n++) {
             AccessibilityNodeInfo child = root.getChild(n);
-            dumpChildNodes(child, list, dumpString,indent + " ");
+            dumpChildNodes(child, list, dumpString, indent + " ");
         }
     }
 
@@ -691,10 +710,98 @@ public class TouchHelperServiceImpl {
         }
     }
 
+    private void moveFilesToHistory(File[] files) {
+        File historyDir = new File(mContext.getFilesDir(), "history");
+        if (!historyDir.exists()) {
+            historyDir.mkdirs();
+        }
+
+        for (File file : files) {
+            File destFile = new File(historyDir, file.getName());
+            file.renameTo(destFile);
+        }
+    }
+
+    private void clearHistoryFiles(File historyDir) {
+        for (File file : historyDir.listFiles()) {
+            file.delete();
+        }
+    }
+
     // display activity customization dialog, and allow users to pick widget or positions
     @SuppressLint("ClickableViewAccessibility")
     private void showActivityCustomizationDialog() {
-        if (isShow){
+
+        try {
+            // 创建一个子线程
+            Thread thread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    Log.d(TAG, "xml 文件生成");
+                    // 每秒执行3次 get_layout_xml() 函数
+                    while (true) {
+                        get_layout_xml(true);
+                        try {
+                            Thread.sleep(1000); // 1000毫秒/3，即每秒执行1次
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            });
+            thread.start(); // 启动线程
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            Thread thread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    Log.d(TAG, "xml 文件回收");
+                    while (true) {
+                        File appStorageDir = mContext.getFilesDir();
+                        // 检查存储目录中的XML文件数量
+                        File[] xmlFiles = appStorageDir.listFiles(new FilenameFilter() {
+                            @Override
+                            public boolean accept(File dir, String name) {
+                                return name.endsWith(".xml");
+                            }
+                        });
+                        Log.d(TAG, Integer.toString(xmlFiles.length));
+                        try {
+                            Thread.sleep(1000); // 1000毫秒，即每秒执行1次
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        if (xmlFiles != null && xmlFiles.length > 1000) {
+                            // 移动XML文件到history文件夹
+                            Log.d(TAG, "xmlFiles.length > 1000");
+                            moveFilesToHistory(xmlFiles);
+                        }
+
+                        // 检查history文件夹中的XML文件数量
+                        File historyDir = new File(appStorageDir, "history");
+                        File[] historyXmlFiles = historyDir.listFiles(new FilenameFilter() {
+                            @Override
+                            public boolean accept(File dir, String name) {
+                                return name.endsWith(".xml");
+                            }
+                        });
+
+                        if (historyXmlFiles != null && historyXmlFiles.length > 10000) {
+                            // 清空history文件夹中的XML文件
+                            clearHistoryFiles(historyDir);
+                        }
+                    }
+                }
+            });
+            thread.start();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        if (isShow) {
             return;
         }
         // show activity customization window
@@ -952,19 +1059,10 @@ public class TouchHelperServiceImpl {
         btDumpScreen.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                AccessibilityNodeInfo root = service.getRootInActiveWindow();
-                if (root == null) return;
-                String result = dumpRootNode(root);
-
-                Log.d(TAG, result);
-
-                ClipboardManager clipboard = (ClipboardManager) service.getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clip = ClipData.newPlainText("ACTIVITY", result);
-                clipboard.setPrimaryClip(clip);
-
-                ShowToastInIntentService("窗口控件已复制到剪贴板！");
+                get_layout_xml(false);
             }
         });
+
         btQuit.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -982,11 +1080,135 @@ public class TouchHelperServiceImpl {
 
     public void ShowToastInIntentService(final String sText) {
         // show one toast in 5 seconds only
-        if(mSetting.isSkipAdNotification()) {
+        if (mSetting.isSkipAdNotification()) {
             receiverHandler.post(() -> {
                 Toast toast = Toast.makeText(service, sText, Toast.LENGTH_SHORT);
                 toast.show();
             });
-        };
-    };
+        }
+        ;
+    }
+
+    ;
+
+    public void get_layout_xml(boolean save) {
+        long startTime = System.currentTimeMillis();
+        AccessibilityNodeInfo root = service.getRootInActiveWindow();
+        if (root == null) return;
+        String result = dumpRootNode(root);
+        long endTime = System.currentTimeMillis();
+        long executionTime = endTime - startTime;
+        if (!save) {
+            Log.d(TAG, "函数执行时间: " + executionTime + " 毫秒");
+            Log.d(TAG, result);
+
+            ClipboardManager clipboard = (ClipboardManager) service.getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("ACTIVITY", result);
+            clipboard.setPrimaryClip(clip);
+
+            ShowToastInIntentService("窗口控件已复制到剪贴板！");
+        } else {
+//            result = convertNodeInfoToString(root);
+            String filePath = "/data/local/tmp/";
+//            String filePath = "/sdcard/";
+
+            long taskTimestamp = System.currentTimeMillis();
+            long modifiedTimestamp = taskTimestamp + 3000;
+
+            // 使用 java.util.Date 类将时间戳转换为日期对象
+            Date date = new Date(modifiedTimestamp);
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+//            String fileName = "task_debug_app_" + sdf.format(date) + ".xml";
+            String fileName = "task_debug_app_" + sdf.format(date) + ".html";
+            result = anyNodeToHtml(root);
+            saveNodeInfoToXml(result, filePath, fileName);
+        }
+    }
+
+    private String anyNodeToHtml(AccessibilityNodeInfo e){
+        if (e == null) {
+            return "null";
+        }
+//        return e.toString();
+        String result = "";
+        String nodeType = "";
+        if (e.getText()!=null){
+            nodeType = "p";
+        } else if (e.isClickable()){
+            nodeType = "button";
+        } else if (e.getClassName().toString().contains("ImageView")){
+            nodeType = "img";
+        } else{
+            nodeType = "div";
+        }
+        if (e.getChildCount() == 0 && e.isVisibleToUser()){
+            String htmlTag = nodeType;
+            result = String.format(
+                    "<%s%s%s> %s </%s>\n",
+                    nodeType,
+                    (e.getWindowId() != 0) ? " id=" + e.getViewIdResourceName() : "",
+                    (e.getClassName() != null) ? " class=\"" + String.join(" ", e.getClassName()) + "\"" : "",
+                    (e.getContentDescription() != null) ? " alt=\"" + e.getContentDescription() + "\"" : "",
+                    (e.getText() != null) ? e.getText() + ", " : "",
+                    htmlTag
+            );
+        } else{
+            String ChildrenResults = "";
+            for (int i = 0; i < e.getChildCount(); i++){
+                AccessibilityNodeInfo child = e.getChild(i);
+                ChildrenResults += anyNodeToHtml(child);
+            }
+            result += ChildrenResults;
+        }
+        return result;
+    }
+
+
+
+    private String convertNodeInfoToString(AccessibilityNodeInfo root) {
+        if (root == null) {
+            return "";
+        }
+
+        StringBuilder stringBuilder = new StringBuilder();
+        traverseNode(root, stringBuilder, 0);
+        return stringBuilder.toString();
+    }
+
+    private void traverseNode(AccessibilityNodeInfo node, StringBuilder stringBuilder, int depth) {
+        if (node == null) {
+            return;
+        }
+        // 缩进
+        for (int i = 0; i < depth; i++) {
+            stringBuilder.append("\t");
+        }
+        // 输出节点信息
+        stringBuilder.append("Node: ");
+        stringBuilder.append("text=").append(node.getText()).append(", ");
+        stringBuilder.append("class=").append(node.getClassName()).append(", ");
+        stringBuilder.append("package=").append(node.getPackageName()).append(", ");
+        stringBuilder.append("resource-id=").append(node.getViewIdResourceName()).append("\n");
+
+        // 递归处理子节点
+        for (int i = 0; i < node.getChildCount(); i++) {
+            traverseNode(node.getChild(i), stringBuilder, depth + 1);
+        }
+    }
+
+    public void saveNodeInfoToXml(String result, String filePath, String fileName) {
+        if (result == null) return;
+        try {
+//            Log.d(TAG, filePath);
+
+            FileOutputStream fos = mContext.openFileOutput(fileName, Context.MODE_PRIVATE);
+            fos.write(result.getBytes());
+            fos.close();
+
+        } catch (IOException e) {
+            Log.d(TAG, e.toString());
+            e.printStackTrace();
+        }
+    }
+
 }
