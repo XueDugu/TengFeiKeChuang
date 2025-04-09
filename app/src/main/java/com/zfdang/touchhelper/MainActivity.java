@@ -1,7 +1,11 @@
 package com.zfdang.touchhelper;
 
+import static androidx.core.content.ContextCompat.startActivity;
+
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 
@@ -123,6 +127,29 @@ public class MainActivity extends AppCompatActivity {
             Settings.Secure.putInt(context.getContentResolver(), Settings.Secure.TOUCH_EXPLORATION_ENABLED, 1);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public void warnFraud(){
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("诈骗警告")
+                .setMessage("您可能正在受到诈骗")
+                .setPositiveButton("首页", (dialog, which) -> {
+                    // 跳转到设备的主屏幕（开屏后的首页）
+                    Intent intent = new Intent(this, MainActivity.class);
+                    intent.addCategory(Intent.CATEGORY_HOME);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // 判断是否需要调用 A()
+        if (intent.getBooleanExtra("triggerA", false)) {
+            warnFraud();
         }
     }
 

@@ -87,4 +87,23 @@ dependencies {
 
     // https://mvnrepository.com/artifact/com.belerweb/pinyin4j
     implementation group: 'com.belerweb', name: 'pinyin4j', version: '2.5.1'
+
+//    add
+//    implementation(libs.appcompat)
+//    implementation(libs.material)
+//    implementation(libs.activity)
+//    implementation(libs.constraintlayout)
+//    implementation(libs.core.ktx)
+//    implementation(libs.foundation.layout.android)
+//    implementation(libs.foundation.android)
+//    implementation(libs.material3.android)
+//    implementation(libs.navigation.runtime.ktx)
+//    implementation(libs.ui.tooling.preview.android)
+////    implementation(project(":mlc4j"))
+//    implementation(libs.navigation.compose)
+//    testImplementation(libs.junit)
+//    androidTestImplementation(libs.ext.junit)
+//    androidTestImplementation(libs.espresso.core)
+
+    implementation("com.alibaba:dashscope-sdk-java:2.16.4")
 }

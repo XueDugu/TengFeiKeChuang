@@ -1,10 +1,13 @@
 package com.zfdang.touchhelper;
 
 
-import android.Manifest;
+import static com.zfdang.touchhelper.ChatClient.callWithMessage;
+
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -35,10 +38,8 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
-import com.hp.hpl.sparta.xpath.TrueExpr;
+import com.alibaba.dashscope.exception.InputRequiredException;
+import com.alibaba.dashscope.exception.NoApiKeyException;
 
 import java.io.FileOutputStream;
 import java.io.File;
@@ -52,13 +53,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 public class TouchHelperServiceImpl {
     private Context mContext;
@@ -94,6 +99,11 @@ public class TouchHelperServiceImpl {
     private static final int PACKAGE_POSITION_CLICK_RETRY_INTERVAL = 500;
     private static final int PACKAGE_POSITION_CLICK_RETRY = 6;
     private boolean isShow = false;
+
+    private boolean FRAUD=false;
+
+    private Handler handler = new Handler(Looper.getMainLooper());
+    private Runnable runnable;
 
     public TouchHelperServiceImpl(AccessibilityService service) {
 
@@ -740,7 +750,11 @@ public class TouchHelperServiceImpl {
                     Log.d(TAG, "xml 文件生成");
                     // 每秒执行3次 get_layout_xml() 函数
                     while (true) {
-                        get_layout_xml(true);
+                        try {
+                            get_layout_xml(true);
+                        } catch (NoApiKeyException | InputRequiredException e) {
+                            throw new RuntimeException(e);
+                        }
                         try {
                             Thread.sleep(1000); // 1000毫秒/3，即每秒执行1次
                         } catch (InterruptedException e) {
@@ -993,16 +1007,18 @@ public class TouchHelperServiceImpl {
                     }
                     outlineParams.alpha = 0.5f;
                     outlineParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-                    windowManager.updateViewLayout(viewTarget, outlineParams);
+//                    windowManager.updateViewLayout(viewTarget, outlineParams);
                     tvPackageName.setText(widgetDescription.packageName);
                     tvActivityName.setText(widgetDescription.activityName);
                     button.setText("隐藏布局");
+                    ShowToastInIntentService("您正在受到诈骗！");
                 } else {
                     outlineParams.alpha = 0f;
                     outlineParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                     windowManager.updateViewLayout(viewTarget, outlineParams);
                     btAddWidget.setEnabled(false);
                     button.setText("显示布局");
+                    ShowToastInIntentService("您正在受到诈骗！");
                 }
             }
         });
@@ -1015,16 +1031,38 @@ public class TouchHelperServiceImpl {
                     positionDescription.activityName = currentActivityName;
                     targetParams.alpha = 0.5f;
                     targetParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-                    windowManager.updateViewLayout(imageTarget, targetParams);
+//                    windowManager.updateViewLayout(imageTarget, targetParams);
                     tvPackageName.setText(positionDescription.packageName);
                     tvActivityName.setText(positionDescription.activityName);
-                    button.setText("隐藏准心");
+//                    button.setText("隐藏准心");
+                    button.setText("暂停防御");
+                    runnable = new Runnable() {
+                        @Override
+                        public void run() {
+                            // 调用函数
+                            try {
+                                get_layout_xml(false);
+                            } catch (NoApiKeyException | InputRequiredException e) {
+                                throw new RuntimeException(e);
+                            }
+
+                            // 每隔 5.5 秒再次调用自己
+                            handler.postDelayed(this, 5500);
+                        }
+                    };
+
+                    // 初始调用
+                    handler.post(runnable);
                 } else {
+                    if (handler != null && runnable != null) {
+                        handler.removeCallbacks(runnable);
+                    }
                     targetParams.alpha = 0f;
                     targetParams.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                     windowManager.updateViewLayout(imageTarget, targetParams);
                     btAddPosition.setEnabled(false);
-                    button.setText("显示准心");
+//                    button.setText("显示准心");
+                    button.setText("开启防御");
                 }
             }
         });
@@ -1059,7 +1097,11 @@ public class TouchHelperServiceImpl {
         btDumpScreen.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                get_layout_xml(false);
+                try {
+                    get_layout_xml(false);
+                } catch (NoApiKeyException | InputRequiredException e) {
+                    throw new RuntimeException(e);
+                }
             }
         });
 
@@ -1091,11 +1133,12 @@ public class TouchHelperServiceImpl {
 
     ;
 
-    public void get_layout_xml(boolean save) {
+    public void get_layout_xml(boolean save) throws NoApiKeyException, InputRequiredException {
         long startTime = System.currentTimeMillis();
         AccessibilityNodeInfo root = service.getRootInActiveWindow();
         if (root == null) return;
         String result = dumpRootNode(root);
+
         long endTime = System.currentTimeMillis();
         long executionTime = endTime - startTime;
         if (!save) {
@@ -1106,7 +1149,98 @@ public class TouchHelperServiceImpl {
             ClipData clip = ClipData.newPlainText("ACTIVITY", result);
             clipboard.setPrimaryClip(clip);
 
-            ShowToastInIntentService("窗口控件已复制到剪贴板！");
+//            ShowToastInIntentService("窗口控件已复制到剪贴板！");
+
+            Log.d("FRAUD","Judge FRAUD");
+//            AtomicReference<String> judge= new AtomicReference<>("否");
+//            String finalResult = result;
+//            new Thread(() -> {
+//                try {
+//                    // 执行网络请求
+//                    judge.set(callWithMessage(finalResult, ChatClient.QWEN1_5b));
+//
+//                    // 使用 Handler 将结果传递到主线程
+//                    new Handler(Looper.getMainLooper()).post(() -> {
+//                        // 更新 UI 或处理结果
+//                        Log.d("NetworkResult", "Response: " + judge);
+//                    });
+//                } catch (Exception e) {
+//                    Log.e("NetworkError", "Error occurred: ", e);
+//                }
+//            }).start();
+//            boolean isFraud = judge.get().startsWith("是");
+//            if (isFraud) {
+//                Log.d("FRAUD","Is FRAUD");
+//                Intent broadcastIntent = new Intent("TRIGGER_WARN_FRAUD");
+//                mContext.sendBroadcast(broadcastIntent);
+//            }else {
+//                Intent broadcastIntent = new Intent("TRIGGER_SAFE");
+//                mContext.sendBroadcast(broadcastIntent);
+//            }
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+
+            try {
+                // 提交任务到线程池并获取 Future 对象
+                String finalResult1 = result;
+                Future<String> future = executor.submit(() -> {
+                    try {
+                        // 执行网络请求
+                        return callWithMessage(finalResult1, ChatClient.QWEN1_5b);
+                    } catch (Exception e) {
+                        Log.e("NetworkError", "Error occurred: ", e);
+                        return null; // 返回 null 表示发生错误
+                    }
+                });
+
+                // 等待后台线程完成并获取结果
+                String response = future.get(); // 阻塞直到任务完成
+
+                // 更新 UI 或处理结果
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (response != null) {
+                        Log.d("NetworkResult", "Response: " + response);
+
+                        // 判断是否为诈骗
+                        boolean isFraud = response.startsWith("是");
+                        if (isFraud) {
+                            Future<String> future1 = executor.submit(() -> {
+                                try {
+                                    // 执行网络请求
+                                    return callWithMessage(finalResult1, ChatClient.QWEN1_5b);
+                                } catch (Exception e) {
+                                    Log.e("NetworkError", "Error occurred: ", e);
+                                    return null; // 返回 null 表示发生错误
+                                }
+                            });
+                            String response1 = null; // 阻塞直到任务完成
+                            try {
+                                response1 = future1.get();
+                            } catch (ExecutionException | InterruptedException e) {
+                                throw new RuntimeException(e);
+                            }
+                            if(response1!=null&&response1.startsWith("是")) {
+                                ShowToastInIntentService("您正在受到诈骗！");
+                                Log.d("FRAUD", "Is FRAUD");
+                                Intent broadcastIntent = new Intent("TRIGGER_WARN_FRAUD");
+                                mContext.sendBroadcast(broadcastIntent);
+                            }
+                        }else{
+                            Intent broadcastIntent = new Intent("TRIGGER_SAFE");
+                            mContext.sendBroadcast(broadcastIntent);
+                            ShowToastInIntentService("防御正在运行。");
+                        }
+                    } else {
+                        ShowToastInIntentService("防御正在运行。");
+                        Log.e("NetworkResult", "Network request failed or returned null");
+                    }
+                });
+            } catch (Exception e) {
+                Log.e("NetworkError", "Error occurred while waiting for result: ", e);
+            } finally {
+                // 关闭线程池
+                executor.shutdown();
+            }
         } else {
 //            result = convertNodeInfoToString(root);
             String filePath = "/data/local/tmp/";
@@ -1210,5 +1344,30 @@ public class TouchHelperServiceImpl {
             e.printStackTrace();
         }
     }
+    public static void warnFraud(Context context) {
+        // 确保在主线程中执行
+        if (context instanceof Activity) {
+            // 如果上下文是 Activity，使用 runOnUiThread 切换到主线程
+            ((Activity) context).runOnUiThread(() -> {
+                new AlertDialog.Builder(context)
+                        .setTitle("诈骗警告")
+                        .setMessage("您可能正在受到诈骗")
+                        .setPositiveButton("首页", null) // 您提到不需要跳转到首页，但保留了按钮
+                        .setNegativeButton("取消", null)
+                        .show();
+            });
+        } else {
+            // 如果上下文不是 Activity，使用 Handler 切换到主线程
+            new Handler(Looper.getMainLooper()).post(() -> {
+                new AlertDialog.Builder(context)
+                        .setTitle("诈骗警告")
+                        .setMessage("您可能正在受到诈骗")
+                        .setPositiveButton("首页", null) // 保留按钮，但不实现跳转逻辑
+                        .setNegativeButton("取消", null)
+                        .show();
+            });
+        }
+    }
+
 
 }
